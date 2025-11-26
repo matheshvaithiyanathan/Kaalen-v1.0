@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Use ubuntu-latest as the host runner for availability, but build Linux inside a Docker container
+        # Use ubuntu-latest as the host runner, but build Linux inside a Docker container
         os: [windows-latest, macos-latest, ubuntu-latest] 
     
     steps:
@@ -20,14 +20,16 @@ jobs:
         uses: actions/checkout@v4
 
       # ----------------------------------------------------------------------
-      # LINUX BUILD STEP: Use Docker to ensure GLIBC compatibility
+      # LINUX BUILD STEP: Uses Docker for GLIBC compatibility and resolves YAML syntax error
       # ----------------------------------------------------------------------
       - name: Build Linux Binary (in Docker Container for Wide Compatibility)
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        # Use ubuntu:20.04 for the build environment; this prevents GLIBC_2.38 dependency errors.
+        # Use docker://ubuntu:20.04 for the build environment (older GLIBC)
         uses: docker://ubuntu:20.04
         with:
-          args: /bin/bash -c "
+          # FIX: Using the Literal Block Scalar (|) resolves YAML syntax errors in multiline args
+          args: |
+            /bin/bash -c "
             # 1. Install dependencies
             apt-get update && apt-get install -y python3 python3-pip zip wget;
             pip install pyinstaller -r requirements.txt;
@@ -39,7 +41,7 @@ jobs:
             mkdir -p ${{ github.workspace }}/build/linux;
             cp dist/Kaalen-v1.0 ${{ github.workspace }}/build/linux/;
             
-            # 4. FIX: Ensure executable permission is set (for terminal use)
+            # 4. FIX: Ensure executable permission is set
             chmod +x ${{ github.workspace }}/build/linux/Kaalen-v1.0;
             
             # 5. FIX: CREATE THE .desktop FILE for double-clicking
@@ -55,11 +57,10 @@ jobs:
             cp icon.ico ${{ github.workspace }}/build/linux/icon.ico;
             "
         env: 
-          # LD_PRELOAD is a common trick to fix issues with GUI apps inside a container build
           LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
       # ----------------------------------------------------------------------
-      # WINDOWS / MACOS BUILD STEPS (Standard runner execution)
+      # WINDOWS / MACOS BUILD STEPS
       # ----------------------------------------------------------------------
       - name: Set up Python (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
@@ -117,7 +118,6 @@ jobs:
         run: |
           # Linux artifact name matches the matrix OS value: ubuntu-latest
           cd artifacts/Kaalen-ubuntu-latest 
-          # This zip now includes the binary, the icon, and the .desktop file
           zip -r ../../Kaalen-linux.zip .
 
       - name: Create Release
@@ -134,6 +134,6 @@ jobs:
             
             This release includes standalone executables for Windows, macOS, and Linux.
             
-            **Linux users:** After unzipping, please double-click the **Kaalen-v1.0.desktop** file to launch the application.
+            **Linux users:** After unzipping, double-click the **Kaalen-v1.0.desktop** file to launch the application.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
