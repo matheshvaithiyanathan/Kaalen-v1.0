@@ -19,30 +19,36 @@ jobs:
         uses: actions/checkout@v4
 
       # ----------------------------------------------------------------------
-      # LINUX BUILD (using Docker with correct volume mounting)
+      # LINUX BUILD (using Docker)
       # ----------------------------------------------------------------------
       - name: Build Linux Binary inside Docker
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
+          # The Docker command is run from the root of the repo (github.workspace)
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
             ubuntu:20.04 \
             /bin/bash -c "
-              set -e
+              set -e # Exit immediately if a command exits with a non-zero status.
 
               cd /src
 
-              apt-get update && apt-get install -y python3 python3-pip zip
+              # FIX: Added 'build-essential' to install necessary tools (like gcc) 
+              # for compiling Python packages (e.g., NumPy/SciPy) from requirements.txt.
+              apt-get update && apt-get install -y python3 python3-pip zip build-essential
+
               pip3 install pyinstaller
               pip3 install -r requirements.txt
 
-              pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0
+              # Added --icon flag for consistency with other platforms. 
+              # Used a .ico file, which PyInstaller on Linux/modern systems can often convert.
+              pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0 --icon icon.ico
 
               mkdir -p build/linux
               cp dist/Kaalen-v1.0 build/linux/
               chmod +x build/linux/Kaalen-v1.0
 
-              # .desktop launcher
+              # .desktop launcher (kept as is, it's a good practice for Linux distribution)
               cat << EOF > build/linux/Kaalen-v1.0.desktop
 [Desktop Entry]
 Name=Kaalen Spectroscopy App
@@ -52,9 +58,7 @@ Icon=icon.ico
 Terminal=false
 Type=Application
 EOF
-
-              chmod +x build/linux/Kaalen-v1.0.desktop
-
+              # The icon.ico file is copied below for the .desktop launcher to reference
               cp icon.ico build/linux/
             "
 
@@ -72,15 +76,19 @@ EOF
         run: |
           pip install --upgrade pip
           pip install pyinstaller
+          # CONSIDER: Add '--upgrade' to the next line to ensure dependencies are fresh
           pip install -r requirements.txt
 
       - name: Build Executable (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
         shell: bash
         run: |
+          # We define the platform-specific output path here to be consistent with the Linux step.
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            pyinstaller App_PP.py --noconsole --onefile --distpath build/windows --name Kaalen-v1.0 --icon icon.ico
+            # Windows: --noconsole and --icon are appropriate
+            pyinstaller App_PP.py --noconsole --onefile --distpath build/windows --name Kaalen-v1.0.exe --icon icon.ico
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            # macOS: --windowed and --icon are appropriate
             pyinstaller App_PP.py --windowed --onefile --distpath build/macos --name Kaalen-v1.0 --icon icon.ico
           fi
 
@@ -111,6 +119,7 @@ EOF
 
       - name: Zip Windows artifact
         run: |
+          # Pathing for zip is confirmed to be correct for action-download-artifact@v4
           cd artifacts/Kaalen-windows-latest
           zip -r ../../Kaalen-windows.zip windows/*
 
@@ -132,6 +141,8 @@ EOF
             Kaalen-macos.zip
             Kaalen-linux.zip
           name: Release ${{ github.ref_name }}
+          # NOTE: Tag name is non-semantic (e.g., 'main-123'). If you want a standard vX.Y.Z tag, 
+          # you should change the trigger to only run on tags (e.g., on: push: tags: ['v*'])
           tag_name: ${{ github.ref_name }}-${{ github.run_number }}
           body: |
             Automated cross-platform release.
