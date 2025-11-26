@@ -24,31 +24,26 @@ jobs:
       - name: Build Linux Binary inside Docker
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
-          # The Docker command is run from the root of the repo (github.workspace)
-          docker run --rm \
-            -v "${{ github.workspace }}:/src" \
-            ubuntu:20.04 \
-            /bin/bash -c "
+          # Putting the Docker run command on one logical line to prevent YAML parsing errors on line continuation characters (\)
+          docker run --rm -v "${{ github.workspace }}:/src" ubuntu:20.04 /bin/bash -c "
               set -e # Exit immediately if a command exits with a non-zero status.
 
               cd /src
 
-              # FIX: Added 'build-essential' to install necessary tools (like gcc) 
-              # for compiling Python packages (e.g., NumPy/SciPy) from requirements.txt.
+              # FIX: Added 'build-essential' for compiling Python packages (e.g., NumPy/SciPy) from requirements.txt.
               apt-get update && apt-get install -y python3 python3-pip zip build-essential
 
               pip3 install pyinstaller
               pip3 install -r requirements.txt
 
               # Added --icon flag for consistency with other platforms. 
-              # Used a .ico file, which PyInstaller on Linux/modern systems can often convert.
               pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0 --icon icon.ico
 
               mkdir -p build/linux
               cp dist/Kaalen-v1.0 build/linux/
               chmod +x build/linux/Kaalen-v1.0
 
-              # .desktop launcher (kept as is, it's a good practice for Linux distribution)
+              # .desktop launcher - The content itself is correct.
               cat << EOF > build/linux/Kaalen-v1.0.desktop
 [Desktop Entry]
 Name=Kaalen Spectroscopy App
@@ -76,7 +71,6 @@ EOF
         run: |
           pip install --upgrade pip
           pip install pyinstaller
-          # CONSIDER: Add '--upgrade' to the next line to ensure dependencies are fresh
           pip install -r requirements.txt
 
       - name: Build Executable (Windows/macOS)
@@ -141,8 +135,6 @@ EOF
             Kaalen-macos.zip
             Kaalen-linux.zip
           name: Release ${{ github.ref_name }}
-          # NOTE: Tag name is non-semantic (e.g., 'main-123'). If you want a standard vX.Y.Z tag, 
-          # you should change the trigger to only run on tags (e.g., on: push: tags: ['v*'])
           tag_name: ${{ github.ref_name }}-${{ github.run_number }}
           body: |
             Automated cross-platform release.
