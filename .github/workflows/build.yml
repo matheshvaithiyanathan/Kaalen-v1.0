@@ -12,67 +12,70 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest] 
-    
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    # -------------------------------
+    # FIX: Use container for Linux
+    # -------------------------------
+    container: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu:20.04' || '' }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       # ----------------------------------------------------------------------
-      # LINUX BUILD STEP: Use Docker for GLIBC compatibility
+      # LINUX BUILD
       # ----------------------------------------------------------------------
-      - name: Build Linux Binary (in Docker Container for Wide Compatibility)
+      - name: Install Linux Dependencies
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: docker://ubuntu:20.04
-        with:
-          args: |
-            /bin/bash -c "
-            # 1. Install dependencies
-            apt-get update && apt-get install -y python3 python3-pip zip wget;
-            pip install pyinstaller -r requirements.txt;
-            
-            # 2. Run PyInstaller
-            pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0;
-            
-            # 3. Create Artifact Directory Structure and Move Binary (Ensure all files are in build/linux)
-            mkdir -p ${{ github.workspace }}/build/linux;
-            cp dist/Kaalen-v1.0 ${{ github.workspace }}/build/linux/;
-            
-            # 4. FIX: Ensure executable permission is set
-            chmod +x ${{ github.workspace }}/build/linux/Kaalen-v1.0;
-            
-            # 5. FIX: CREATE THE .desktop FILE for double-clicking
-            echo '[Desktop Entry]' > ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Name=Kaalen Spectroscopy App' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Comment=2D Spectroscopy Data Analysis Tool' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Exec=./Kaalen-v1.0' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Icon=icon.ico' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop; 
-            echo 'Terminal=false' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Type=Application' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            
-            # 6. Include the icon file
-            cp icon.ico ${{ github.workspace }}/build/linux/icon.ico;
-            "
-        env: 
-          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+        run: |
+          apt-get update && apt-get install -y python3 python3-pip zip
+          pip3 install pyinstaller
+          pip3 install -r requirements.txt
+
+      - name: Build Linux Binary
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0
+
+          # Prepare structure
+          mkdir -p build/linux
+          cp dist/Kaalen-v1.0 build/linux/
+          chmod +x build/linux/Kaalen-v1.0
+
+          # Create .desktop launcher
+          cat << EOF > build/linux/Kaalen-v1.0.desktop
+[Desktop Entry]
+Name=Kaalen Spectroscopy App
+Comment=2D Spectroscopy Data Analysis Tool
+Exec=./Kaalen-v1.0
+Icon=icon.ico
+Terminal=false
+Type=Application
+EOF
+
+          chmod +x build/linux/Kaalen-v1.0.desktop
+
+          # Include icon
+          cp icon.ico build/linux/
 
       # ----------------------------------------------------------------------
-      # WINDOWS / MACOS BUILD STEPS
+      # WINDOWS / MACOS BUILD
       # ----------------------------------------------------------------------
       - name: Set up Python (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
-      - name: Install PyInstaller and dependencies (Windows/macOS)
+
+      - name: Install Dependencies
         if: ${{ matrix.os != 'ubuntu-latest' }}
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install pyinstaller
           pip install -r requirements.txt
-      
-      - name: Build with PyInstaller (Windows/macOS)
+
+      - name: Build (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
         run: |
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
@@ -82,21 +85,25 @@ jobs:
           fi
         shell: bash
 
+      # ----------------------------------------------------------------------
+      # UPLOAD ARTIFACTS
+      # ----------------------------------------------------------------------
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Kaalen-${{ matrix.os }}
-          # FIX: For Windows/macOS, we upload 'build/*' (e.g., build/windows, build/macos).
-          # For Linux, it's fine since it creates build/linux, which is covered by the wildcard.
           path: build/*
           retention-days: 7
 
+  # ------------------------------------------------------------------------
+  # RELEASE PACKAGING
+  # ------------------------------------------------------------------------
   create-release:
     needs: build-binaries
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      
+
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -106,19 +113,16 @@ jobs:
       - name: Zip Windows artifact
         run: |
           cd artifacts/Kaalen-windows-latest
-          # The binary is inside the 'windows' subdirectory due to PyInstaller's --distpath
           zip -r ../../Kaalen-windows.zip windows/*
 
       - name: Zip macOS artifact
         run: |
           cd artifacts/Kaalen-macos-latest
-          # The binary is inside the 'macos' subdirectory
           zip -r ../../Kaalen-macos.zip macos/*
 
       - name: Zip Linux artifact
         run: |
-          cd artifacts/Kaalen-ubuntu-latest 
-          # The binary is inside the 'linux' subdirectory
+          cd artifacts/Kaalen-ubuntu-latest
           zip -r ../../Kaalen-linux.zip linux/*
 
       - name: Create Release
@@ -132,9 +136,13 @@ jobs:
           tag_name: ${{ github.ref_name }}-${{ github.run_number }}
           body: |
             This is an automated release.
-            
-            This release includes standalone executables for Windows, macOS, and Linux.
-            
-            **Linux users:** After unzipping, double-click the **Kaalen-v1.0.desktop** file to launch the application.
+
+            This release includes standalone executables for:
+            - Windows
+            - macOS
+            - Linux
+
+            Linux users:  
+            After extracting, double-click **Kaalen-v1.0.desktop** to launch the application.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
