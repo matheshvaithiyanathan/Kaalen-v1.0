@@ -12,55 +12,59 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Use ubuntu-latest as the host runner, but build Linux inside a Docker container
+        # Use ubuntu-latest as the host runner for all jobs, relying on Docker for the Linux build environment
         os: [windows-latest, macos-latest, ubuntu-latest] 
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      ---
+      
       # ----------------------------------------------------------------------
-      # LINUX BUILD STEP: Uses Docker for GLIBC compatibility and resolves YAML syntax error
+      # LINUX BUILD STEP: Uses Docker for GLIBC compatibility and fixes file paths
       # ----------------------------------------------------------------------
       - name: Build Linux Binary (in Docker Container for Wide Compatibility)
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        # Use docker://ubuntu:20.04 for the build environment (older GLIBC)
+        # Uses ubuntu:20.04 to prevent GLIBC_2.38 dependency errors on older user systems
         uses: docker://ubuntu:20.04
         with:
-          # FIX: Using the Literal Block Scalar (|) resolves YAML syntax errors in multiline args
+          # Using the Literal Block Scalar (|) for clean multiline commands
           args: |
             /bin/bash -c "
             # 1. Install dependencies
             apt-get update && apt-get install -y python3 python3-pip zip wget;
             pip install pyinstaller -r requirements.txt;
             
-            # 2. Run PyInstaller
-            pyinstaller App_PP.py --onefile --distpath dist --name Kaalen-v1.0;
+            # 2. Run PyInstaller, outputting directly to the final host path
+            # FIX: This ensures the build/linux folder exists and contains files for artifact upload
+            pyinstaller App_PP.py --onefile --distpath ${{ github.workspace }}/build/linux --name Kaalen-v1.0;
             
-            # 3. Create Artifact Directory Structure and Move Binary
-            mkdir -p ${{ github.workspace }}/build/linux;
-            cp dist/Kaalen-v1.0 ${{ github.workspace }}/build/linux/;
+            # 3. Define variables for clarity
+            FINAL_PATH=${{ github.workspace }}/build/linux/Kaalen-v1.0;
             
             # 4. FIX: Ensure executable permission is set
-            chmod +x ${{ github.workspace }}/build/linux/Kaalen-v1.0;
+            chmod +x $FINAL_PATH;
             
             # 5. FIX: CREATE THE .desktop FILE for double-clicking
-            echo '[Desktop Entry]' > ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Name=Kaalen Spectroscopy App' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Comment=2D Spectroscopy Data Analysis Tool' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Exec=./Kaalen-v1.0' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Icon=icon.ico' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop; 
-            echo 'Terminal=false' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Type=Application' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
+            echo '[Desktop Entry]' > $FINAL_PATH.desktop;
+            echo 'Name=Kaalen Spectroscopy App' >> $FINAL_PATH.desktop;
+            echo 'Comment=2D Spectroscopy Data Analysis Tool' >> $FINAL_PATH.desktop;
+            echo 'Exec=./Kaalen-v1.0' >> $FINAL_PATH.desktop;
+            echo 'Icon=icon.ico' >> $FINAL_PATH.desktop; 
+            echo 'Terminal=false' >> $FINAL_PATH.desktop;
+            echo 'Type=Application' >> $FINAL_PATH.desktop;
             
             # 6. Include the icon file
             cp icon.ico ${{ github.workspace }}/build/linux/icon.ico;
             "
         env: 
-          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6 # Essential for PyQt/Matplotlib GUI apps in containers
+
+      ---
 
       # ----------------------------------------------------------------------
-      # WINDOWS / MACOS BUILD STEPS
+      # WINDOWS / MACOS BUILD STEPS (Standard runner execution)
       # ----------------------------------------------------------------------
       - name: Set up Python (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
@@ -89,9 +93,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Kaalen-${{ matrix.os }}
+          # This path now correctly covers build/windows, build/macos, and build/linux
           path: build/*
           retention-days: 7
 
+  ---
+  
   create-release:
     needs: build-binaries
     runs-on: ubuntu-latest
@@ -117,6 +124,7 @@ jobs:
       - name: Zip Linux artifact
         run: |
           cd artifacts/Kaalen-ubuntu-latest 
+          # This zip contains the binary, icon, and .desktop file from the build/linux folder
           zip -r ../../Kaalen-linux.zip .
 
       - name: Create Release
