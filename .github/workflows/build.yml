@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Using ubuntu-latest as the host runner, but the build environment is Docker (see below)
+        # Use ubuntu-latest as the host runner for availability, but build Linux inside a Docker container
         os: [windows-latest, macos-latest, ubuntu-latest] 
     
     steps:
@@ -20,10 +20,11 @@ jobs:
         uses: actions/checkout@v4
 
       # ----------------------------------------------------------------------
-      # Linux Build Step: Use Docker to manage GLIBC/compatibility
+      # LINUX BUILD STEP: Use Docker to ensure GLIBC compatibility
       # ----------------------------------------------------------------------
-      - name: Build Linux Binary (in Docker Container for Compatibility)
+      - name: Build Linux Binary (in Docker Container for Wide Compatibility)
         if: ${{ matrix.os == 'ubuntu-latest' }}
+        # Use ubuntu:20.04 for the build environment; this prevents GLIBC_2.38 dependency errors.
         uses: docker://ubuntu:20.04
         with:
           args: /bin/bash -c "
@@ -38,27 +39,27 @@ jobs:
             mkdir -p ${{ github.workspace }}/build/linux;
             cp dist/Kaalen-v1.0 ${{ github.workspace }}/build/linux/;
             
-            # 4. FIX: Ensure executable permission is set
+            # 4. FIX: Ensure executable permission is set (for terminal use)
             chmod +x ${{ github.workspace }}/build/linux/Kaalen-v1.0;
             
             # 5. FIX: CREATE THE .desktop FILE for double-clicking
             echo '[Desktop Entry]' > ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
             echo 'Name=Kaalen Spectroscopy App' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
             echo 'Comment=2D Spectroscopy Data Analysis Tool' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            # Exec uses relative path since the .desktop is in the same folder as the binary after unzipping
             echo 'Exec=./Kaalen-v1.0' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
-            echo 'Icon=icon.ico' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop; # Assumes icon.ico is also included in the zip
+            echo 'Icon=icon.ico' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop; 
             echo 'Terminal=false' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
             echo 'Type=Application' >> ${{ github.workspace }}/build/linux/Kaalen-v1.0.desktop;
             
-            # 6. Include the icon file for the desktop entry
+            # 6. Include the icon file
             cp icon.ico ${{ github.workspace }}/build/linux/icon.ico;
             "
         env: 
-          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6 # Helps with GUI apps in containers
+          # LD_PRELOAD is a common trick to fix issues with GUI apps inside a container build
+          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
       # ----------------------------------------------------------------------
-      # Steps for Windows/macOS Build: (Same as before)
+      # WINDOWS / MACOS BUILD STEPS (Standard runner execution)
       # ----------------------------------------------------------------------
       - name: Set up Python (Windows/macOS)
         if: ${{ matrix.os != 'ubuntu-latest' }}
@@ -114,8 +115,9 @@ jobs:
 
       - name: Zip Linux artifact
         run: |
-          # The binary, icon, and the .desktop file are all inside this artifact folder
+          # Linux artifact name matches the matrix OS value: ubuntu-latest
           cd artifacts/Kaalen-ubuntu-latest 
+          # This zip now includes the binary, the icon, and the .desktop file
           zip -r ../../Kaalen-linux.zip .
 
       - name: Create Release
@@ -132,6 +134,6 @@ jobs:
             
             This release includes standalone executables for Windows, macOS, and Linux.
             
-            **Linux users:** After unzipping, you can double-click the **Kaalen-v1.0.desktop** file to launch the application.
+            **Linux users:** After unzipping, please double-click the **Kaalen-v1.0.desktop** file to launch the application.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
