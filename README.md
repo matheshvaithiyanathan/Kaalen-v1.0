@@ -54,7 +54,7 @@ This python project was developed duing my PhD work in AG Horch, FU Berlin, fund
 
 ### 🤝 Contributing
 
-Contributions are welcome! If you find a bug or have an idea for a new feature, please open an issue or submit a pull request.
+Contributions are welcome! If you find a bug or have an idea for a new feature, please open an issue or submit a pull request. If you are not used to github, please write an email :)
 
 ---
 
